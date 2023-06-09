@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+
+set -eou pipefail
+
+# Set default environment variables
+readonly OPENAI_API="https://api.openai.com/v1/chat/completions"
+readonly OPENAI_KEY="${OPENAI_KEY:?OPENAI_KEY is not set}"
+readonly OPENAI_MODEL="${OPENAI_MODEL:-gpt-3.5-turbo}"
+readonly OPENAI_CONTEXT="${OPENAI_CONTEXT:-/tmp/gpt.$WINDOWID}"
+readonly OPENAI_PROMPT="${OPENAI_PROMPT:-/tmp/gpt.$WINDOWID.prompt}"
+readonly OPENAI_TOKENS="${OPENAI_TOKENS:-4096}"
+
+# Create the prompt file if it doesn't exist
+if [ ! -f "$OPENAI_PROMPT" ]; then
+  echo 'You are a helpful assistant that answers questions.
+You print valid markdown.' > "$OPENAI_PROMPT"
+fi
+
+echo -e "\n$OPENAI_PROMPT"
+cat "$OPENAI_PROMPT" 1>&2
+echo
+
+# Function to handle script exits and print error messages
+function handle_exit {
+  local status=$?
+  if [ $status -ne 0 ]; then
+    echo "Script failed with status code $status on command: $BASH_COMMAND" >&2
+  fi
+}
+trap handle_exit EXIT
+
+# If no arguments and no stdin
+if [ -z "$*" ] && [ -t 0 ]; then
+  if [ -t 1 ]; then
+    "$EDITOR" "$OPENAI_CONTEXT"
+  else
+    cat "$OPENAI_CONTEXT"
+    exit 0
+  fi
+fi
+
+# If input is provided, append it to the context file
+if [ ! -t 0 ]; then
+  cat - >> "$OPENAI_CONTEXT"
+fi
+
+# Append any arguments to the context file
+if [ -n "$*" ]; then
+  echo "$*" >> "$OPENAI_CONTEXT"
+fi
+
+# Function to create the prompt object for OpenAI API
+function create_prompt {
+  jq --raw-input '{"role": "system", "content": .}' < "$OPENAI_PROMPT" | jq --slurp
+}
+
+function pretty_print {
+  if [ -t 1 ] ; then
+    pandoc -f markdown -t html - | elinks --dump --dump-color-mode 1
+  else
+    cat -
+  fi
+}
+
+# TODO: change temperature, and/or presence/frequency penalty settings in order to unlobotomise the bot a little more.
+# Build the message object and send it to OpenAI API with curl
+jq --null-input \
+  --arg MODEL "$OPENAI_MODEL" \
+  --argfile PROMPT <(create_prompt) \
+  --rawfile MESSAGE <(tail -c "$OPENAI_TOKENS" "$OPENAI_CONTEXT") '{
+  "model": $MODEL,
+  "messages": [
+    $PROMPT[],
+    {
+      "role": "user",
+      "content": $MESSAGE
+    }
+  ]
+}' | curl --fail-early -s \
+  --no-buffer \
+  -H "Authorization: Bearer $OPENAI_KEY" \
+  -H "Content-Type: application/json" \
+  -X POST \
+  --data-binary @- "$OPENAI_API" |
+  jq -e -r '.choices[0].message.content' |
+  tee -a "$OPENAI_CONTEXT" |
+  pretty_print
