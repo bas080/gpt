@@ -1,11 +1,19 @@
 #!/usr/bin/env bash
+ 
+set -euo pipefail
 
-set -eou pipefail
+readonly OR_API="https://openrouter.ai/api/v1/chat/completions"
+readonly OR_MODEL="${OR_MODEL:-openai/gpt-4o}"
 
 # Set default environment variables
 readonly OPENAI_API="https://api.openai.com/v1/chat/completions"
 readonly OPENAI_KEY="${OPENAI_KEY:?OPENAI_KEY is not set}"
-readonly OPENAI_MODEL="${OPENAI_MODEL:-gpt-3.5-turbo}"
+
+# Use the latest model by default (new GPT-4.1 family)
+# Fallback to gpt-3.5-turbo if not available
+readonly OPENAI_MODEL="${OPENAI_MODEL:-gpt-4.1-mini}"
+
+# Context and prompt handling
 readonly OPENAI_CONTEXT="${OPENAI_CONTEXT:-/tmp/gpt.$WINDOWID}"
 readonly OPENAI_PROMPT="${OPENAI_PROMPT:-/tmp/gpt.$WINDOWID.prompt}"
 readonly OPENAI_TOKENS="${OPENAI_TOKENS:-4096}"
@@ -62,26 +70,22 @@ function pretty_print {
   fi
 }
 
-# TODO: change temperature, and/or presence/frequency penalty settings in order to unlobotomise the bot a little more.
-# Build the message object and send it to OpenAI API with curl
+# Build JSON body for new model (supports larger context)
 jq --null-input \
-  --arg MODEL "$OPENAI_MODEL" \
-  --argfile PROMPT <(create_prompt) \
+  --arg MODEL "$OR_MODEL" \
+  --argfile PROMPT <(jq --raw-input '{"role": "system", "content": .}' < "$OPENAI_PROMPT" | jq --slurp) \
   --rawfile MESSAGE <(tail -c "$OPENAI_TOKENS" "$OPENAI_CONTEXT") '{
   "model": $MODEL,
   "messages": [
     $PROMPT[],
-    {
-      "role": "user",
-      "content": $MESSAGE
-    }
-  ]
+    {"role": "user", "content": $MESSAGE}
+  ],
+  "temperature": 0.7
 }' | curl --fail-early -s \
-  --no-buffer \
-  -H "Authorization: Bearer $OPENAI_KEY" \
+  -H "Authorization: Bearer $OR_KEY" \
   -H "Content-Type: application/json" \
-  -X POST \
-  --data-binary @- "$OPENAI_API" |
+  -X POST "$OR_API" \
+  --data-binary @- |
   jq -e -r '.choices[0].message.content' |
   tee -a "$OPENAI_CONTEXT" |
   pretty_print
