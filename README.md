@@ -1,66 +1,113 @@
-`$ cat ./README.md ./gpt | gpt Please update the README > README.md`
+# gpt
 
-> Just kidding, I wrote the readme... or did I?
+This Bash script provides a CLI interface to OpenAI/compatible models for interactive conversations. It maintains a **JSONL context file** to store the conversation history, allowing the assistant to “remember” previous messages and user tasks.
 
-# $ gpt
-
-This Bash script uses the OpenAI API to generate a response to a user-specified
-query using the GPT-3 language model. The response is appended to a specified
-context file, which contains the history of messages and responses.
+* Structured role-based memory (`system`, `user`, `assistant`)
+* Optionally persistent context across terminal sessions
+* Configurable prompts and models
+* Plain-text output while storing JSONL
 
 ## Requirements
 
-To use this script, you will need:
+- Bash 4+  
+- curl  
+- jq  
 
-- Bash (version 4 or later)
-- curl
-- jq
-- pandoc (optional pretty printing to terminal)
-- elinks (optional retty printing to terminal)
+You also need an OpenAI or OpenRouter API key.
 
-You will also need an OpenAI API key, which can be obtained from the [OpenAI
-website](https://beta.openai.com/signup/).
+---
 
 ## Installation
 
+1. Copy the `gpt` script to a directory in your `$PATH`.  
+2. Make it executable:
 
-1. Copy paste the script in a `$PATH` directory.
-2. Make the script executable with `chmod +x gpt`.
-3. Add `export OPENAI_KEY="your-api-key"` to your .bashrc.
+```bash
+chmod +x gpt
+```
 
-You can now run the script.
+3. Export your API key in your shell configuration (`.bashrc` or `.zshrc`):
 
-> Note: If you do not wish to export your OpenAI API key, you can include it
-> directly in the script by replacing `$OPENAI_KEY` with your actual API key.
+```bash
+export GPT_KEY="your-api-key"
+```
+
+> Alternatively, you can define the key directly in the script, but using environment variables is safer.
+
+---
+
+## Configuration
+
+The script is highly configurable via environment variables:
+
+```bash
+GPT_KEY="${GPT_KEY:?Please define your GPT key}"
+GPT_MODEL="${GPT_MODEL:-openai/gpt-4o}"        # Default model
+GPT_CONTEXT="${GPT_CONTEXT:-/tmp/gpt.$WINDOWID}" # JSONL context file
+GPT_PROMPT="${GPT_PROMPT:-/tmp/gpt.$WINDOWID.prompt}" # System prompt
+GPT_TOKENS="${GPT_TOKENS:-512}"               # Max token slice for context
+GPT_TEMPERATURE="${GPT_TEMPERATURE:-0.7}"     # Response creativity
+GPT_MAX_LINES="${GPT_MAX_LINES:-40}"          # Max messages to keep in context
+```
+
+> `$WINDOWID` is unique for each terminal session, allowing separate contexts for multiple terminals.
+
+You can also create aliases for different tasks:
+
+```bash
+alias programmer-gpt='GPT_PROMPT="$HOME/programmer.prompt" gpt'
+alias git-gpt='GPT_PROMPT="$HOME/git.prompt" gpt'
+```
 
 ## Usage
 
-To run the script, use the following command:
-
-```
-gpt                   # Opens the context file for editing.
-gpt Hellp gpt         # Uses the arguments as input.
-stdin | gpt           # Uses the stdin as user input.
-stdin | gpt Hello gpt # Uses stdin + arguments as input.
-```
-
-It's important to know that you can configure gpt using the environment
-variables. I create gpt aliases for different tasks. Here is a list of those
-variables and their default values.
+* Open the context for editing:
 
 ```bash
-OPENAI_KEY="${OPENAI_KEY:?OPENAI_KEY is not set}"
-OPENAI_MODEL="${OPENAI_MODEL:-gpt-3.5-turbo}"
-OPENAI_CONTEXT="${OPENAI_CONTEXT:-/tmp/gpt.$WINDOWID}"
-OPENAI_PROMPT="${OPENAI_PROMPT:-/tmp/gpt.$WINDOWID.prompt}"
-OPENAI_TOKENS="${OPENAI_TOKENS:-4096}"
+gpt
 ```
 
-> `$WINDOWID` is unique for every terminal you open. This allows you to spawn
-> a new terminal and start with a clean slate.
-
+* Send arguments as input:
 
 ```bash
-alias programmer-gpt='OPENAI_PROMPT="$HOME/programmer.prompt" gpt'
-alias git-gpt='OPENAI_PROMPT="$HOME/git.prompt" gpt'
+gpt Hello assistant
 ```
+
+* Use stdin for input:
+
+```bash
+echo "Hello assistant" | gpt
+```
+
+* Combine stdin + arguments:
+
+```bash
+echo "Please summarize this" | gpt Detailed summary
+```
+
+## Behavior
+
+* User messages (from stdin or arguments) are stored as JSON objects with `"role":"user"`.
+* Assistant responses are stored as JSON objects with `"role":"assistant"`.
+* Both are appended to the **JSONL context file** (`GPT_CONTEXT`).
+* Only the **last `$GPT_MAX_LINES` messages** are sent to the model to prevent exceeding context limits.
+* The system prompt is always sent as a `"role":"system"` message at the start of each request.
+
+## Notes
+
+* The script works with both OpenAI API and OpenRouter API endpoints.
+* Using JSONL for context allows you to have persistent chat memory, turn-taking, and proper role separation.
+
+## Example
+
+```bash
+# Add a task
+gpt "Remind me to buy thread for sewing project"
+
+# Check your tasks
+gpt "What are my tasks today?"
+
+# Pipe stdin
+echo "Add Minetest project tasks" | gpt
+```
+
