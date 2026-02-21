@@ -42,12 +42,13 @@ The script is highly configurable via environment variables:
 
 ```bash
 GPT_KEY="${GPT_KEY:?Please define your GPT key}"
-GPT_MODEL="${GPT_MODEL:-openai/gpt-4o}"        # Default model
+GPT_MODEL="${GPT_MODEL:-openai/gpt-4}"        # Default model
 GPT_CONTEXT="${GPT_CONTEXT:-/tmp/gpt.$WINDOWID}" # JSONL context file
 GPT_PROMPT="${GPT_PROMPT:-/tmp/gpt.$WINDOWID.prompt}" # System prompt
 GPT_TOKENS="${GPT_TOKENS:-512}"               # Max token slice for context
 GPT_TEMPERATURE="${GPT_TEMPERATURE:-0.7}"     # Response creativity
 GPT_MAX_LINES="${GPT_MAX_LINES:-40}"          # Max messages to keep in context
+GPT_MAX_TOKENS="${GPT_MAX_TOKENS:-400}"       # Max tokens for the model response
 ```
 
 > `$WINDOWID` is unique for each terminal session, allowing separate contexts for multiple terminals.

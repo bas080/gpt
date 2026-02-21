@@ -9,6 +9,7 @@ readonly GPT_CONTEXT="${GPT_CONTEXT:-/tmp/gpt.$WINDOWID}"
 readonly GPT_PROMPT="${GPT_PROMPT:-/tmp/gpt.$WINDOWID.prompt}"
 readonly GPT_TEMPERATURE="${GPT_TEMPERATURE:-0.7}"
 readonly GPT_MAX_LINES="${GPT_MAX_LINES:-40}"
+readonly GPT_MAX_TOKENS="${GPT_MAX_TOKENS:- 400}"
 
 if [ ! -f "$GPT_PROMPT" ]; then
   echo "" > "$GPT_PROMPT"
@@ -51,10 +52,12 @@ function pretty_print {
 # Build JSON for request: use PROMPT and last N lines from GPT_CONTEXT
 jq --null-input \
   --arg MODEL "$GPT_MODEL" \
+  --arg TOKENS "$GPT_MAX_TOKENS" \
   --argjson HISTORY "$(tail -n "$GPT_MAX_LINES" "$GPT_CONTEXT" | jq -s '.')" \
   --arg SYSTEM "$(cat "$GPT_PROMPT")" \
 '{
   model: $MODEL,
+  max_tokens: $TOKENS,
   messages: ([{role:"system", content:$SYSTEM}] + $HISTORY),
   temperature: '"$GPT_TEMPERATURE"'
 }' | curl --fail-early -s \
