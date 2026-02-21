@@ -1,34 +1,29 @@
 #!/usr/bin/env bash
- 
+
 set -euo pipefail
 
-readonly OR_API="https://openrouter.ai/api/v1/chat/completions"
-readonly OR_MODEL="${OR_MODEL:-openai/gpt-4o}"
+readonly GPT_API="https://openrouter.ai/api/v1/chat/completions"
+readonly GPT_MODEL="${GPT_MODEL:-openai/gpt-4o}"
+readonly GPT_KEY="${GPT_KEY:?-Please define gpt key}"
+readonly GPT_CONTEXT="${GPT_CONTEXT:-/tmp/gpt.$WINDOWID}"
+readonly GPT_PROMPT="${GPT_PROMPT:-/tmp/gpt.$WINDOWID.prompt}"
+readonly GPT_TEMPERATURE="${GPT_TEMPERATURE:-0.7}"
+readonly GPT_MAX_LINES="${GPT_MAX_LINES:-40}"
 
-# Set default environment variables
-readonly OPENAI_API="https://api.openai.com/v1/chat/completions"
-readonly OPENAI_KEY="${OPENAI_KEY:?OPENAI_KEY is not set}"
-
-# Use the latest model by default (new GPT-4.1 family)
-# Fallback to gpt-3.5-turbo if not available
-readonly OPENAI_MODEL="${OPENAI_MODEL:-gpt-4.1-mini}"
-
-# Context and prompt handling
-readonly OPENAI_CONTEXT="${OPENAI_CONTEXT:-/tmp/gpt.$WINDOWID}"
-readonly OPENAI_PROMPT="${OPENAI_PROMPT:-/tmp/gpt.$WINDOWID.prompt}"
-readonly OPENAI_TOKENS="${OPENAI_TOKENS:-4096}"
-
-# Create the prompt file if it doesn't exist
-if [ ! -f "$OPENAI_PROMPT" ]; then
-  echo 'You are a helpful assistant that answers questions.
-You print valid markdown.' > "$OPENAI_PROMPT"
+if [ ! -f "$GPT_PROMPT" ]; then
+  echo "" > "$GPT_PROMPT"
 fi
 
-echo -e "\n$OPENAI_PROMPT"
-cat "$OPENAI_PROMPT" 1>&2
-echo
+{
+  echo "
+  PROMPT:  $GPT_PROMPT
+  CONTEXT: $GPT_CONTEXT
+  MODEL:   $GPT_MODEL
+  "
+} 1>&2
 
-# Function to handle script exits and print error messages
+mkdir -p ~/.config/gpt/context
+
 function handle_exit {
   local status=$?
   if [ $status -ne 0 ]; then
@@ -37,55 +32,35 @@ function handle_exit {
 }
 trap handle_exit EXIT
 
-# If no arguments and no stdin
 if [ -z "$*" ] && [ -t 0 ]; then
-  if [ -t 1 ]; then
-    "$EDITOR" "$OPENAI_CONTEXT"
-  else
-    cat "$OPENAI_CONTEXT"
-    exit 0
-  fi
+  "$EDITOR" "$GPT_CONTEXT"
 fi
 
-# If input is provided, append it to the context file
 if [ ! -t 0 ]; then
-  cat - >> "$OPENAI_CONTEXT"
+  jq -nc --arg content "$(cat -)" '{role:"user", content:$content}' >> "$GPT_CONTEXT"
 fi
 
-# Append any arguments to the context file
 if [ -n "$*" ]; then
-  echo "$*" >> "$OPENAI_CONTEXT"
+  jq -nc --arg content "$*" '{role:"user", content:$content}' >> "$GPT_CONTEXT"
 fi
-
-# Function to create the prompt object for OpenAI API
-function create_prompt {
-  jq --raw-input '{"role": "system", "content": .}' < "$OPENAI_PROMPT" | jq --slurp
-}
 
 function pretty_print {
-  if [ -t 1 ] ; then
-    pandoc -f markdown -t html - | elinks --dump --dump-color-mode 1
-  else
-    cat -
-  fi
+  cat -
 }
 
-# Build JSON body for new model (supports larger context)
+# Build JSON for request: use PROMPT and last N lines from GPT_CONTEXT
 jq --null-input \
-  --arg MODEL "$OR_MODEL" \
-  --argfile PROMPT <(jq --raw-input '{"role": "system", "content": .}' < "$OPENAI_PROMPT" | jq --slurp) \
-  --rawfile MESSAGE <(tail -c "$OPENAI_TOKENS" "$OPENAI_CONTEXT") '{
-  "model": $MODEL,
-  "messages": [
-    $PROMPT[],
-    {"role": "user", "content": $MESSAGE}
-  ],
-  "temperature": 0.7
+  --arg MODEL "$GPT_MODEL" \
+  --argjson HISTORY "$(tail -n "$GPT_MAX_LINES" "$GPT_CONTEXT" | jq -s '.')" \
+  --arg SYSTEM "$(cat "$GPT_PROMPT")" \
+'{
+  model: $MODEL,
+  messages: ([{role:"system", content:$SYSTEM}] + $HISTORY),
+  temperature: '"$GPT_TEMPERATURE"'
 }' | curl --fail-early -s \
-  -H "Authorization: Bearer $OR_KEY" \
+  -H "Authorization: Bearer $GPT_KEY" \
   -H "Content-Type: application/json" \
-  -X POST "$OR_API" \
+  -X POST "$GPT_API" \
   --data-binary @- |
   jq -e -r '.choices[0].message.content' |
-  tee -a "$OPENAI_CONTEXT" |
-  pretty_print
+  tee >(jq -Rc '{role:"assistant", content:.}' >> "$GPT_CONTEXT")
