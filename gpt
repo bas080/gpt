@@ -34,11 +34,12 @@ function handle_exit {
 trap handle_exit EXIT
 
 if [ -z "$*" ] && [ -t 0 ]; then
+  touch "$GPT_CONTEXT"
   "$EDITOR" "$GPT_CONTEXT"
 fi
 
 if [ ! -t 0 ]; then
-  jq -nc --arg content "$(cat -)" '{role:"user", content:$content}' >> "$GPT_CONTEXT"
+  jq -Rsc '{role:"user", content:.}' >> "$GPT_CONTEXT"
 fi
 
 if [ -n "$*" ]; then
@@ -66,4 +67,4 @@ jq --null-input \
   -X POST "$GPT_API" \
   --data-binary @- |
   jq -e -r '.choices[0].message.content' |
-  tee >(jq -Rc '{role:"assistant", content:.}' >> "$GPT_CONTEXT")
+  tee >(jq -Rcs '{role:"assistant", content:.}' >> "$GPT_CONTEXT")
