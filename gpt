@@ -2,6 +2,7 @@
 
 set -euo pipefail
 
+readonly GPT_VERSION='0.0.0'
 readonly GPT_API="https://openrouter.ai/api/v1/chat/completions"
 readonly GPT_MODEL="${GPT_MODEL:-openai/gpt-4o}"
 readonly GPT_KEY="${GPT_KEY:?-Please define gpt key}"
@@ -17,6 +18,7 @@ fi
 
 {
   echo "
+  VERSION: $GPT_VERSION
   PROMPT:  $GPT_PROMPT
   CONTEXT: $GPT_CONTEXT
   MODEL:   $GPT_MODEL
